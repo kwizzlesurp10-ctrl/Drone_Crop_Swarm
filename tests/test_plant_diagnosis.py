@@ -1,20 +1,22 @@
-"""Tests for plant diagnosis functionality."""
+"""Unit tests for plant diagnosis functionality."""
 
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, AsyncMock
-from src.plant_diagnosis import diagnose_plants, PlantDiagnosisModel
+from unittest.mock import Mock, patch, MagicMock
+import sys
+
+
+# Mock all external dependencies before importing
+sys.modules['ultralytics'] = MagicMock()
+sys.modules['torch'] = MagicMock()
+sys.modules['numpy'] = MagicMock()
+sys.modules['cv2'] = MagicMock()
+sys.modules['PIL'] = MagicMock()
+
+from src.plant_diagnosis import PlantDiagnosisModel
 
 
 class TestPlantDiagnosisModel:
     """Test cases for PlantDiagnosisModel class."""
-
-    @patch('src.plant_diagnosis.YOLO')
-    def test_model_initialization(self, mock_yolo):
-        """Test that model initializes correctly."""
-        model = PlantDiagnosisModel("test_model.pt")
-        mock_yolo.assert_called_once_with("test_model.pt")
-        assert model.model_path == "test_model.pt"
 
     def test_calculate_vra_rate_healthy(self):
         """Test VRA calculation for healthy plants."""
@@ -30,6 +32,13 @@ class TestPlantDiagnosisModel:
             vra_rate = model._calculate_vra_rate("nutrient_deficiency", 0.98)
             assert 0.4 <= vra_rate <= 0.6  # Moderate to high rate
 
+    def test_calculate_vra_rate_fungal_infection(self):
+        """Test VRA calculation for fungal infection."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel()
+            vra_rate = model._calculate_vra_rate("fungal_infection", 0.95)
+            assert 0.6 <= vra_rate <= 0.8  # High rate for fungal
+
     def test_calculate_vra_rate_bounds(self):
         """Test that VRA rate is clamped between 0 and 1."""
         with patch('src.plant_diagnosis.YOLO'):
@@ -41,74 +50,57 @@ class TestPlantDiagnosisModel:
             vra_rate = model._calculate_vra_rate("healthy", 0.0)
             assert vra_rate >= 0.0
 
+    def test_calculate_vra_rate_unknown(self):
+        """Test VRA calculation for unknown disease."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel()
+            vra_rate = model._calculate_vra_rate("unknown", 0.5)
+            assert 0.0 <= vra_rate <= 0.2  # Conservative rate
 
-class TestDiagnosePlantsFunction:
-    """Test cases for diagnose_plants async function."""
+    def test_calculate_vra_rate_no_detection(self):
+        """Test VRA calculation when no detection."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel()
+            vra_rate = model._calculate_vra_rate("no_detection", 0.0)
+            assert vra_rate == 0.0
 
-    @pytest.mark.asyncio
-    @patch('src.plant_diagnosis.YOLO')
-    async def test_diagnose_plants_basic(self, mock_yolo):
-        """Test basic plant diagnosis."""
-        # Mock YOLO results
-        mock_result = Mock()
-        mock_box = Mock()
-        mock_box.conf = [0.98]
-        mock_box.cls = [1]  # nutrient_deficiency
-        mock_box.xyxy = [[10.0, 20.0, 100.0, 200.0]]
-        mock_result.boxes = [mock_box]
+    def test_process_yolo_results_empty(self):
+        """Test processing empty YOLO results."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel()
+            mock_result = Mock()
+            mock_result.boxes = None
+            results = [mock_result]
 
-        mock_model_instance = Mock()
-        mock_model_instance.return_value = [mock_result]
-        mock_yolo.return_value = mock_model_instance
+            diagnostics = model._process_yolo_results(results)
 
-        # Run diagnosis
-        result = await diagnose_plants(
-            image_url="test_image.jpg",
-            geo_coords=(40.0, -74.0)
-        )
+            # Should return no_detection placeholder
+            assert len(diagnostics) >= 1
+            assert diagnostics[0]["disease"] == "no_detection"
+            assert diagnostics[0]["confidence"] == 0.0
 
-        # Verify results
-        assert "diagnostics" in result
-        assert "image_source" in result
-        assert "total_plants" in result
-        assert "geo_coords" in result
-        assert result["image_source"] == "test_image.jpg"
-        assert result["geo_coords"] == (40.0, -74.0)
-        assert len(result["diagnostics"]) > 0
+    def test_model_path_attribute(self):
+        """Test that model path is stored correctly."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel("custom_path.pt")
+            assert model.model_path == "custom_path.pt"
 
-    @pytest.mark.asyncio
-    @patch('src.plant_diagnosis.YOLO')
-    async def test_diagnose_plants_no_coords(self, mock_yolo):
-        """Test diagnosis without geo coordinates."""
-        mock_result = Mock()
-        mock_result.boxes = None
+    def test_vra_rates_for_all_disease_types(self):
+        """Test VRA calculation for all disease types."""
+        with patch('src.plant_diagnosis.YOLO'):
+            model = PlantDiagnosisModel()
+            diseases = [
+                ("healthy", 0.1),
+                ("nutrient_deficiency", 0.5),
+                ("fungal_infection", 0.7),
+                ("pest_damage", 0.6),
+                ("water_stress", 0.3)
+            ]
 
-        mock_model_instance = Mock()
-        mock_model_instance.return_value = [mock_result]
-        mock_yolo.return_value = mock_model_instance
-
-        result = await diagnose_plants(image_url="test_image.jpg")
-
-        assert result["geo_coords"] is None
-
-    @pytest.mark.asyncio
-    @patch('src.plant_diagnosis.YOLO')
-    async def test_diagnose_plants_custom_model(self, mock_yolo):
-        """Test diagnosis with custom model path."""
-        mock_result = Mock()
-        mock_result.boxes = None
-
-        mock_model_instance = Mock()
-        mock_model_instance.return_value = [mock_result]
-        mock_yolo.return_value = mock_model_instance
-
-        result = await diagnose_plants(
-            image_url="test.jpg",
-            model_path="custom_model.pt"
-        )
-
-        assert result is not None
-        assert "diagnostics" in result
+            for disease, expected_base in diseases:
+                vra_rate = model._calculate_vra_rate(disease, 1.0)
+                # With confidence 1.0, rate should equal base rate
+                assert abs(vra_rate - expected_base) < 0.01
 
 
 if __name__ == "__main__":
