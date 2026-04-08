@@ -1,0 +1,18 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "regions": ["iad1", "sfo1", "cdg1", "hnd1", "syd1"],
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "@supabase-url",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@supabase-anon-key",
+    "SUPABASE_SERVICE_ROLE_KEY": "@supabase-service-role-key",
+    "STRIPE_SECRET_KEY": "@stripe-secret-key",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "@stripe-publishable-key",
+    "NEXT_PUBLIC_POSTHOG_KEY": "@posthog-key",
+    "NEXT_PUBLIC_POSTHOG_HOST": "@posthog-host",
+    "SENTRY_DSN": "@sentry-dsn",
+    "SENTRY_AUTH_TOKEN": "@sentry-auth-token"
+  }
+}
