@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS extension
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: aetherag-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aetherag_orbit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - aetherag-network
+
+  # Supabase local development (optional - can use cloud Supabase instead)
+  # Uncomment if running Supabase locally
+  # supabase:
+  #   image: supabase/postgres:15.1.0.117
+  #   container_name: aetherag-supabase
+  #   environment:
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "54322:5432"
+  #   volumes:
+  #     - supabase_data:/var/lib/postgresql/data
+  #   networks:
+  #     - aetherag-network
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: aetherag-api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/aetherag_orbit
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app
+      - ./models:/app/models
+    depends_on:
+      - postgres
+    networks:
+      - aetherag-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Next.js Frontend
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: aetherag-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_MAPBOX_TOKEN: ${NEXT_PUBLIC_MAPBOX_TOKEN}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - /app/node_modules
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+    networks:
+      - aetherag-network
+    command: npm run dev --workspace=@aetherag-orbit/web
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: aetherag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - aetherag-network
+
+volumes:
+  postgres_data:
+  # supabase_data:
+  redis_data:
+
+networks:
+  aetherag-network:
+    driver: bridge
