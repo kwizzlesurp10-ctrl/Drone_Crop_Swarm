@@ -1,0 +1,15 @@
+{
+  "name": "aetherag-orbit",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "deploy:web": "turbo run build --filter=web && vercel --prod",
+    "deploy:api": "fly deploy --app aetherag-orbit-api",
+    "symbiosis:toggle": "node scripts/toggle-xai-contribution.js"
+  },
+  "devDependencies": {
+    "turbo": "2.3.0"
+  }
+}
